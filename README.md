@@ -1,10 +1,10 @@
-# 🤖 AgentFlow AI Assistant
+# AgentFlow AI Assistant
 
 Hey there! I'm Siwani, and this is my AI assistant that I built. It's not perfect, but I'm really proud of how far it's come. 
 
 **What it does:** Think ChatGPT, but it can actually search the web, read your documents, and make its own decisions about when to use different tools. Plus, it runs entirely on Cloudflare's edge network (which means it's fast and I don't have to manage any servers).
 
-## 📸 Screenshot
+## Screenshot
 
 ![AI Agent Chat Interface](AgentFlow_AI_Snap.png)
 
