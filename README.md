@@ -1,6 +1,6 @@
 # 🤖 AgentFlow AI Assistant
 
-Hey there! 👋 I'm Siwani, and this is my AI assistant that I built. It's not perfect, but I'm really proud of how far it's come. 
+Hey there! I'm Siwani, and this is my AI assistant that I built. It's not perfect, but I'm really proud of how far it's come. 
 
 **What it does:** Think ChatGPT, but it can actually search the web, read your documents, and make its own decisions about when to use different tools. Plus, it runs entirely on Cloudflare's edge network (which means it's fast and I don't have to manage any servers).
 
@@ -10,7 +10,7 @@ Hey there! 👋 I'm Siwani, and this is my AI assistant that I built. It's not p
 
 *The chat interface showing the AI assistant in action - powered by Cloudflare Workers AI*
 
-## 🏗️ Architecture
+## Architecture
 
 ```
                   User's Browser
@@ -38,7 +38,7 @@ Hey there! 👋 I'm Siwani, and this is my AI assistant that I built. It's not p
 
 The frontend is a simple HTML page that talks to a Cloudflare Worker. The Worker handles all the AI logic, manages chat sessions using Durable Objects, and stores document embeddings in Vectorize for the RAG functionality.
 
-## 🚀 How It Works (Mechanism)
+## How It Works (Mechanism)
 
 ### 1. Function Calling (Tool Use)
 
@@ -82,7 +82,7 @@ Upload image → Llama 3.2 Vision → Detailed description
 Ask questions → AI references the description → Accurate answers
 ```
 
-## 📦 Setup & Installation
+## Setup & Installation
 
 ### Prerequisites
 - Node.js 18+ installed
@@ -192,7 +192,7 @@ The chat interface is pretty intuitive - just type your question and hit enter. 
 - Stores conversation history
 - Maintains context across messages
 
-### 🛠️ Technical Stack
+### Technical Stack
 
 - **AI Model**: Llama 3.3 70B (via Cloudflare Workers AI)
 - **Embeddings**: BGE-small-en-v1.5 (384 dimensions)
@@ -213,12 +213,12 @@ For example, if you ask "Who is the president in 2026?", the system automaticall
 - Gets current information
 - AI uses that to answer accurately
 
-## 🐛 Known Issues (I'm Working On Them!)
+## Known Issues (I'm Working On Them!)
 - **Image uploads** can sometimes have timing issues (race conditions are annoying)
 - **Large PDFs** (>10MB) might timeout during upload
 - **UI could be prettier** 
 
-## 🎯 What's Next?
+## What's Next?
 
 Things I want to add:
 - [ ] Streaming responses (so you see the AI "typing")
@@ -227,7 +227,7 @@ Things I want to add:
 - [ ] Analytics dashboard to see usage
 - [ ] Multi-language support
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Here's how:
 
@@ -243,7 +243,7 @@ Contributions are welcome! Here's how:
 - Test thoroughly before submitting.
 - Update README if adding new features
 
-## 🔐 Security & Privacy
+## Security & Privacy
 
 - All data encrypted in transit (HTTPS)
 - Documents stored securely in Vectorize (Cloudflare's managed service)
@@ -252,7 +252,7 @@ Contributions are welcome! Here's how:
 - Self-host for complete control
 
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **Cloudflare** for the amazing Workers platform
 - **Meta** for open-sourcing Llama models
@@ -260,7 +260,7 @@ Contributions are welcome! Here's how:
 - Everyone who gave me feedback and encouragement
 
 
-## 📧 Let's Connect!
+## Let's Connect!
 
 **Siwani** - [LinkedIn](https://www.linkedin.com/in/siwanisah/)
 **Email**: siwanishah8888@gmail.com
@@ -273,4 +273,4 @@ Project Link: [AgentFlow_AI](https://github.com/Siwanii/AgentFlow_AI)
 
 ---
 
-**Built with ❤️ , determination, and a lot of debugging by Siwani** 💻
+**Built with, determination, and a lot of debugging by Siwani** 
