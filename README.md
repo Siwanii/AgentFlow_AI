@@ -100,42 +100,7 @@ cd AgentFlow_AI
 npm install
 ```
 
-
-### 3. Set up Cloudflare stuff
-```bash
-# Login (it'll open your browser)
-npx wrangler login
-
-# Create the database for embeddings
-npx wrangler vectorize create rag-documents --dimensions=384 --metric=cosine
-
-# Or use the setup script:
-./setup-vectorize.sh
-```
-
-### 4. Configure your environment
-
-The `wrangler.toml` file is already configured, but here's what it looks like:
-
-```toml
-name = "ai-chat-assistant"
-main = "src/index.js"
-compatibility_date = "2025-01-01"
-
-[ai]
-binding = "AI"
-
-[[vectorize]]
-binding = "VECTORIZE"
-index_name = "rag-documents"
-
-[[durable_objects.bindings]]
-name = "CHAT_SESSION"
-class_name = "ChatSession"
-```
-
-
-### 5. Deploy
+### 3. Deploy
 
 Once everything is set up, just run:
 
@@ -252,14 +217,6 @@ Contributions are welcome! Here's how:
 - Self-host for complete control
 
 
-## Acknowledgments
-
-- **Cloudflare** for the amazing Workers platform
-- **Meta** for open-sourcing Llama models
-- **Coffee** for keeping me awake during debugging sessions
-- Everyone who gave me feedback and encouragement
-
-
 ## Let's Connect!
 
 **Siwani** - [LinkedIn](https://www.linkedin.com/in/siwanisah/)
@@ -273,4 +230,3 @@ Project Link: [AgentFlow_AI](https://github.com/Siwanii/AgentFlow_AI)
 
 ---
 
-**Built with, determination, and a lot of debugging by Siwani** 
