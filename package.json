@@ -18,8 +18,8 @@
   "author": "Cloudflare Internship Candidate",
   "license": "MIT",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241218.0",
-    "wrangler": "^3.78.12"
+    "@cloudflare/workers-types": "^5.20261125.1",
+    "wrangler": "^4.168.0"
   },
   "dependencies": {
     "@cloudflare/ai": "^1.0.0"

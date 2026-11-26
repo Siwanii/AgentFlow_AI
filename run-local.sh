@@ -21,6 +21,12 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
+# Install dependencies (including wrangler) on first run
+if [ ! -x node_modules/.bin/wrangler ]; then
+    echo "📦 Installing dependencies..."
+    npm install || { echo "❌ npm install failed"; exit 1; }
+fi
+
 # Ensure Python3 for static server
 if ! command -v python3 &> /dev/null; then
     echo "❌ python3 is required to serve the static page. Please install Python 3."
@@ -32,10 +38,11 @@ lsof -ti:${API_PORT} | xargs kill -9 2>/dev/null || true
 lsof -ti:${FRONTEND_PORT} | xargs kill -9 2>/dev/null || true
 
 # Start the Worker in development mode using main wrangler.toml
-# Note: Using remote mode (without --local) to enable Vectorize bindings
+# The Worker runs locally; AI and Vectorize connect to Cloudflare via
+# `remote = true` in wrangler.toml (full --remote mode doesn't support
+# SQLite Durable Objects)
 echo "🔧 Starting Cloudflare Worker on http://localhost:${API_PORT}"
-echo "⚠️  Note: Using REMOTE mode for Vectorize support. Vectorize requires remote connection."
-echo "⚠️  Vectorize bindings only work in remote mode, not local mode."
+echo "ℹ️  AI and Vectorize use your Cloudflare account (run 'npx wrangler login' first)"
 echo ""
 
 # Create a log file for wrangler output
@@ -47,8 +54,8 @@ rm -f "$WRANGLER_LOG"
   export NVM_DIR="$HOME/.nvm"
   [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
   
-  # Run wrangler dev and log output
-  wrangler dev --remote --port ${API_PORT} 2>&1 | tee "$WRANGLER_LOG" | sed -e "s#http://localhost:${API_PORT}#\x1b[34mhttp://localhost:${API_PORT}\x1b[0m#g"
+  # Run the project's wrangler (from node_modules) and log output
+  npx wrangler dev --port ${API_PORT} 2>&1 | tee "$WRANGLER_LOG" | sed -e "s#http://localhost:${API_PORT}#\x1b[34mhttp://localhost:${API_PORT}\x1b[0m#g"
 ) &
 WRANGLER_PID=$!
 
@@ -64,7 +71,7 @@ if ! kill -0 $WRANGLER_PID 2>/dev/null; then
   fi
   echo ""
   echo "💡 Common issues:"
-  echo "   - Not logged in: Run 'wrangler login'"
+  echo "   - Not logged in: Run 'npx wrangler login'"
   echo "   - Network issues: Check your internet connection"
   echo "   - Port in use: Another process is using port ${API_PORT}"
   echo "   - Syntax errors: Check your code for errors"

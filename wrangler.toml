@@ -3,13 +3,17 @@ main = "src/index.js"
 compatibility_date = "2025-01-01"
 
 # ---------- DEFAULT (local/dev) ----------
+# remote = true runs the Worker locally but connects AI and Vectorize to your
+# Cloudflare account - neither has a local simulator
 
 [ai]
 binding = "AI"
+remote = true
 
 [[vectorize]]
 binding = "VECTORIZE"
 index_name = "rag-documents"
+remote = true
 
 [[durable_objects.bindings]]
 name = "CHAT_SESSION"
@@ -26,10 +30,12 @@ name = "ai-chat-assistant-prod"
 
 [env.production.ai]
 binding = "AI"
+remote = true
 
 [[env.production.vectorize]]
 binding = "VECTORIZE"
 index_name = "rag-documents"
+remote = true
 
 [[env.production.durable_objects.bindings]]
 name = "CHAT_SESSION"
@@ -46,10 +52,12 @@ name = "ai-chat-assistant-staging"
 
 [env.staging.ai]
 binding = "AI"
+remote = true
 
 [[env.staging.vectorize]]
 binding = "VECTORIZE"
 index_name = "rag-documents"
+remote = true
 
 [[env.staging.durable_objects.bindings]]
 name = "CHAT_SESSION"

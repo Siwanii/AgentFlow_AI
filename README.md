@@ -77,7 +77,7 @@ Upload documents and ask questions about them:
 Upload images and get AI-powered descriptions:
 
 ```javascript
-Upload image → Llama 3.2 Vision → Detailed description
+Upload image → Llama 4 Scout (vision) → Detailed description
   ↓
 Ask questions → AI references the description → Accurate answers
 ```
@@ -86,8 +86,10 @@ Ask questions → AI references the description → Accurate answers
 
 ### Prerequisites
 - Node.js 18+ installed
+- Python 3 (serves the chat page locally)
 - Cloudflare account (free tier works!)
-- Wrangler CLI installed
+
+Wrangler (Cloudflare's CLI) is installed with the project's dependencies, so you don't need it globally.
 
 ### 1. Clone the Repository
 ```bash
@@ -100,15 +102,30 @@ cd AgentFlow_AI
 npm install
 ```
 
-### 3. Deploy
+### 3. Log in to Cloudflare
+```bash
+npx wrangler login
+```
 
-Once everything is set up, just run:
+### 4. Create the Vectorize Index (first time only)
+```bash
+./setup-vectorize.sh
+```
+
+This creates the `rag-documents` index and a `sessionId` metadata index, which keeps each user's uploads private to their own chat session.
+
+### 5. Run Locally
 
 ```bash
 npm run dev
 ```
 
-The script will start the Cloudflare Worker in development mode. You'll see output showing it's connecting to Vectorize and Workers AI.
+The Worker runs on your machine, but Workers AI and Vectorize connect to your Cloudflare account (there's no local version of either - see `remote = true` in `wrangler.toml`).
+
+### 6. Deploy
+```bash
+npm run deploy
+```
 
 Then open your browser to:
 - **Chat Interface**: http://localhost:3000/cf_ai_chat-assistant/
@@ -149,7 +166,7 @@ The chat interface is pretty intuitive - just type your question and hit enter. 
 **RAG System (`src/rag.js`)**
 - Handles document processing (PDF extraction, image understanding)
 - Creates embeddings using BGE model
-- Manages Vectorize storage and retrieval
+- Manages Vectorize storage and retrieval, scoped to each chat session
 - Handles race conditions for image indexing
 
 **Session Management (`src/chat-session.js`)**
@@ -159,11 +176,11 @@ The chat interface is pretty intuitive - just type your question and hit enter. 
 
 ### Technical Stack
 
-- **AI Model**: Llama 3.3 70B (via Cloudflare Workers AI)
+- **AI Model**: Llama 3.3 70B fp8-fast (via Cloudflare Workers AI), with Llama 4 Scout as fallback
 - **Embeddings**: BGE-small-en-v1.5 (384 dimensions)
 - **Vector Database**: Cloudflare Vectorize
 - **Session Storage**: Cloudflare Durable Objects
-- **Vision Models**: LLaVA, UForm, Llama Vision (for images)
+- **Vision Models**: Llama 4 Scout, with Llama 3.2 Vision as fallback
 
 ### How Tools Are Triggered
 
@@ -179,7 +196,7 @@ For example, if you ask "Who is the president in 2026?", the system automaticall
 - AI uses that to answer accurately
 
 ## Known Issues (I'm Working On Them!)
-- **Image uploads** can sometimes have timing issues (race conditions are annoying)
+- **New uploads take up to a minute to become searchable** - Vectorize needs time to index them, so ask again if the AI says it can't find your document
 - **Large PDFs** (>10MB) might timeout during upload
 - **UI could be prettier** 
 
@@ -212,6 +229,7 @@ Contributions are welcome! Here's how:
 
 - All data encrypted in transit (HTTPS)
 - Documents stored securely in Vectorize (Cloudflare's managed service)
+- Uploads are tied to your chat session - other users can't search or read them
 - Session data isolated via Durable Objects
 - No data shared with third parties
 - Self-host for complete control
