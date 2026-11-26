@@ -499,69 +499,13 @@ export default {
                 }
               }
               } else {
-                // Try to find the most recent image document ID by querying with recent timestamps
-                // Document ID format: image-{timestamp}-{random}
-                // Try querying with timestamps from the last 2 minutes (in case image was just uploaded)
-                const now = Date.now();
-                const recentTimestamps = [];
-                for (let i = 0; i < 24; i++) { // Try last 2 minutes in 5-second intervals
-                  recentTimestamps.push(now - (i * 5000));
-                }
-                
-                let foundRecentDoc = false;
-                for (const timestamp of recentTimestamps) {
-                  // Try document ID pattern: image-{timestamp}-*
-                  // We'll query with a generic search and filter by timestamp in metadata
-                  try {
-                    const testChunks = await similaritySearch('[IMAGE DESCRIPTION]', env, 50, sessionId);
-                    const recentImageChunks = testChunks.filter(c => {
-                      const chunkTimestamp = c.metadata?.timestamp || extractTimestampFromDocId(c.metadata?.documentId || '');
-                      // Check if timestamp is within 2 minutes
-                      return Math.abs(chunkTimestamp - timestamp) < 120000; // 2 minutes
-                    });
-                    
-                    if (recentImageChunks.length > 0) {
-                      // Group by document ID and find most recent
-                      const recentDocs = new Map();
-                      for (const chunk of recentImageChunks) {
-                        const docId = chunk.metadata?.documentId || 'unknown';
-                        if (!recentDocs.has(docId)) {
-                          const metaTs = chunk.metadata?.timestamp || 0;
-                          const docIdTs = extractTimestampFromDocId(docId);
-                          recentDocs.set(docId, Math.max(metaTs, docIdTs));
-                        }
-                      }
-                      
-                      // Get the most recent document ID
-                      let bestDocId = null;
-                      let bestTimestamp = 0;
-                      for (const [docId, ts] of recentDocs.entries()) {
-                        if (ts > bestTimestamp) {
-                          bestTimestamp = ts;
-                          bestDocId = docId;
-                        }
-                      }
-                      
-                      if (bestDocId) {
-                        const documentChunks = await queryByDocumentId(bestDocId, env, 2, 1000, sessionId);
-                        if (documentChunks.length > 0) {
-                          finalChunks = documentChunks;
-                          foundRecentDoc = true;
-                          break;
-                        }
-                      }
-                    }
-                  } catch (err) {
-                    // Continue to next timestamp
-                    continue;
-                  }
-                }
-                
-                if (!foundRecentDoc) {
-                  const fallbackImageChunks = uniqueChunks.filter(c => c.text?.includes('[IMAGE DESCRIPTION]'));
-                  if (fallbackImageChunks.length > 0) {
-                    finalChunks = fallbackImageChunks;
-                  }
+                // No image ID to look up, and the image searches above already came back
+                // empty - repeating the same search won't find anything new (it used to
+                // run 24 times here, burning Workers AI quota), so use whatever image
+                // chunks the general search found
+                const fallbackImageChunks = uniqueChunks.filter(c => c.text?.includes('[IMAGE DESCRIPTION]'));
+                if (fallbackImageChunks.length > 0) {
+                  finalChunks = fallbackImageChunks;
                 }
               }
             }
@@ -696,6 +640,10 @@ export default {
                          errorMessage.includes('authentication') ||
                          errorMessage.includes('login');
       
+      if (isDailyLimitError(errorMessage)) {
+        return dailyLimitResponse(corsHeaders);
+      }
+
       if (isAuthError) {
         return new Response(JSON.stringify({ 
           error: 'Authentication required',
@@ -943,7 +891,9 @@ Always cite sources when using web search results.`;
             const errorMsg = imageError.message || 'Unknown error';
             
             // Provide more specific error message for image processing failures
-            if (errorMsg.includes('vision models') || errorMsg.includes('not available')) {
+            if (isDailyLimitError(errorMsg)) {
+              throw imageError;
+            } else if (errorMsg.includes('vision models') || errorMsg.includes('not available')) {
               throw new Error(`Image processing failed: Vision models are not available in your Cloudflare Workers AI plan.\n\nVision models require a paid plan. Alternatives:\n1. Describe the image in text and ask questions about it\n2. Use OCR tools to extract text from images before uploading\n3. Upgrade your Cloudflare Workers AI plan`);
             } else {
               throw new Error(`Failed to process image: ${errorMsg}`);
@@ -973,6 +923,10 @@ Always cite sources when using web search results.`;
       let errorDetails = '';
       let suggestion = '';
       
+      if (isDailyLimitError(errorMessage)) {
+        return dailyLimitResponse(corsHeaders);
+      }
+
       // Check for image/vision model errors first (before PDF errors)
       if (errorMessage.includes('image') || errorMessage.includes('vision') || errorMessage.includes('Image understanding')) {
         // Extract the actual error message from the error
@@ -1035,6 +989,23 @@ Always cite sources when using web search results.`;
     });
   }
 };
+
+// Workers AI free plan allows 10,000 neurons per day (error 4006 when exceeded)
+function isDailyLimitError(errorMessage) {
+  return errorMessage.includes('4006') || errorMessage.includes('daily free allocation');
+}
+
+function dailyLimitResponse(corsHeaders) {
+  const message = "I've reached today's free Cloudflare Workers AI limit, so I can't reply or read uploads right now. The limit resets at midnight UTC - please try again then.";
+  return new Response(JSON.stringify({
+    error: 'Daily AI limit reached',
+    message,
+    response: message
+  }), {
+    status: 429,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+}
 
 // Export the Durable Object class
 export { ChatSession };

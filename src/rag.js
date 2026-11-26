@@ -797,6 +797,11 @@ export async function similaritySearch(query, env, topK = TOP_K, sessionId) {
   }
 }
 
+// Workers AI free plan allows 10,000 neurons per day (error 4006 when exceeded)
+function isDailyLimitError(message) {
+  return !!message && (message.includes('4006') || message.includes('daily free allocation'));
+}
+
 // Works out the image type from its first bytes so the data URL is labelled correctly
 function detectImageMimeType(bytes) {
   if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
@@ -907,6 +912,10 @@ async function extractTextFromImage(imageData, env) {
             }
           } catch (formatError) {
             console.warn(`⚠️ Format failed:`, formatError.message);
+            // Out of daily quota - every model and format will fail the same way
+            if (isDailyLimitError(formatError.message)) {
+              throw formatError;
+            }
             continue; // Try next format
           }
         }
@@ -951,6 +960,9 @@ async function extractTextFromImage(imageData, env) {
           console.warn(`⚠️ Response from ${model.name} was empty or too short:`, description);
         }
       } catch (modelError) {
+        if (isDailyLimitError(modelError.message)) {
+          throw modelError;
+        }
         console.warn(`⚠️ Model ${model.name} failed:`, modelError.message);
         console.warn(`📋 Error details:`, modelError);
         

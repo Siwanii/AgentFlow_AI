@@ -468,6 +468,10 @@
     <script>
         // Random so other users can't guess it and read this session's documents
         let sessionId = 'session-' + crypto.randomUUID();
+        // Most recent image uploaded in this session. Kept in memory (not sessionStorage)
+        // because sessionId changes on every page load, and the server only returns
+        // images that belong to the current session
+        let lastImageDocumentId = null;
         let isLoading = false;
         let attachedFiles = [];
         let attachedUrl = null;
@@ -700,8 +704,8 @@
                         });
                         
                         if (isImage) {
-                            // Store the most recent image document ID in sessionStorage
-                            sessionStorage.setItem('lastImageDocumentId', uploadData.documentId);
+                            // Remember the most recent image for follow-up questions
+                            lastImageDocumentId = uploadData.documentId;
                             console.log(`📸 Stored image document ID: ${uploadData.documentId}`);
                         }
                     }
@@ -760,7 +764,7 @@
                                     lowerMessage.includes('what is this') ||
                                     lowerMessage.includes('what do you see');
                 
-                const lastImageDocumentId = isImageQuery ? sessionStorage.getItem('lastImageDocumentId') : null;
+                const imageDocumentIdToSend = isImageQuery ? lastImageDocumentId : null;
                 
                 let response;
                 try {
@@ -773,7 +777,7 @@
                             message: finalMessage || 'Process the uploaded documents',
                             sessionId: sessionId,
                             conversationHistory: conversationHistory,
-                            lastImageDocumentId: lastImageDocumentId // Send document ID for race condition fix
+                            lastImageDocumentId: imageDocumentIdToSend // Send document ID for race condition fix
                         }),
                         signal: controller.signal
                 });
