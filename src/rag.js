@@ -556,9 +556,11 @@ export async function storeInVectorize(chunks, embeddings, documentId, sessionId
   }
 }
 
-// Queries Vectorize by document ID - I added this because of a race condition
-// where images would be uploaded but not indexed yet. This bypasses similarity
-// search and just grabs chunks by ID, with retries because indexing takes time
+// Fetches a document's chunks straight from Vectorize by vector ID. I added this
+// because of a race condition where images would be uploaded but not indexed yet,
+// and filtered similarity search sometimes misses a session's vectors entirely.
+// Chunk IDs are always {documentId}-chunk-{n}, so we can look them up directly.
+// Retries because newly uploaded vectors take a while to become readable
 export async function queryByDocumentId(documentId, env, maxRetries = 5, initialDelay = 2000, sessionId) {
   const vectorize = env.VECTORIZE || env.vectorize || env.Vectorize;
   if (!vectorize) {
@@ -571,86 +573,46 @@ export async function queryByDocumentId(documentId, env, maxRetries = 5, initial
     return [];
   }
 
-  // Use a generic query that should match any document, then filter by documentId
-  // We'll use a very generic embedding query
-  const genericQuery = '[IMAGE DESCRIPTION]'; // Generic query that should match image descriptions
-  
+  const batchSize = 20; // getByIds accepts at most 20 IDs per call
+  const maxChunks = 100;
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      // Create embedding for generic query
-      const queryEmbedding = await env.AI.run(EMBEDDING_MODEL, {
-        text: genericQuery
-      });
-      
-      // Extract vector (same logic as similaritySearch)
-      let queryVector = null;
-      if (queryEmbedding) {
-        if (queryEmbedding.shape && queryEmbedding.data) {
-          const shape = queryEmbedding.shape;
-          const data = queryEmbedding.data;
-          if (Array.isArray(shape) && shape.length === 2 && shape[0] === 1) {
-            if (data instanceof Float32Array) {
-              queryVector = Array.from(data);
-            } else if (Array.isArray(data)) {
-              queryVector = Array.isArray(data[0]) ? data[0] : data;
-            }
-          }
-        } else if (Array.isArray(queryEmbedding)) {
-          queryVector = Array.isArray(queryEmbedding[0]) ? queryEmbedding[0] : queryEmbedding;
-        }
+      const documentChunks = [];
+      for (let first = 0; first < maxChunks; first += batchSize) {
+        const ids = Array.from({ length: batchSize }, (_, i) => `${documentId}-chunk-${first + i}`);
+        const vectors = await vectorize.getByIds(ids);
+        documentChunks.push(...vectors);
+        // Chunks are numbered contiguously, so a short batch means we've got them all
+        if (vectors.length < batchSize) break;
       }
-      
-      if (!queryVector || queryVector.length !== 384) {
-        throw new Error('Invalid query vector');
-      }
-      
-      // Query with a large topK to get many results, then filter by documentId
-      const results = await vectorize.query(queryVector, {
-        topK: 200,
-        filter: { sessionId: String(sessionId) } // only this session's documents
-      });
-      
-      // Filter results to only include chunks from the specified documentId
-      const documentChunks = (results.matches || []).filter(match => {
-        const matchDocId = match.metadata?.documentId || match.id?.split('-chunk-')[0];
-        // Try both exact match and string comparison (in case of type mismatch)
-        const matches = matchDocId === documentId || String(matchDocId) === String(documentId);
-        if (!matches && attempt === 0) {
-          // Log on first attempt for debugging
-        }
-        return matches;
-      }).map(match => ({
-        id: match.id,
-        text: match.metadata?.text || '',
-        score: match.score || 0,
-        metadata: match.metadata || {}
-      }));
-      
-      if (documentChunks.length > 0) {
-        return documentChunks;
-      } else {
-        // Log what we found for debugging
-        if (attempt === 0 && results.matches && results.matches.length > 0) {
-          const sampleDocIds = [...new Set(results.matches.slice(0, 10).map(m => 
-            m.metadata?.documentId || m.id?.split('-chunk-')[0] || 'unknown'
-          ))];
-        }
-      }
-      
-      // If no results and not the last attempt, wait and retry
-      if (attempt < maxRetries - 1) {
-        const delay = initialDelay * Math.pow(2, attempt); // Exponential backoff
-        await new Promise(resolve => setTimeout(resolve, delay));
+
+      // Only return chunks that belong to this session - the document ID comes
+      // from the client, so don't trust it on its own
+      const sessionChunks = documentChunks
+        .filter(vector => vector.metadata?.sessionId === String(sessionId))
+        .sort((a, b) => (a.metadata?.chunkIndex || 0) - (b.metadata?.chunkIndex || 0))
+        .map(vector => ({
+          id: vector.id,
+          text: vector.metadata?.text || '',
+          score: 1,
+          metadata: vector.metadata || {}
+        }));
+
+      if (sessionChunks.length > 0) {
+        return sessionChunks;
       }
     } catch (error) {
       console.warn(`⚠️ Error querying document ${documentId} (attempt ${attempt + 1}/${maxRetries}):`, error.message);
-      if (attempt < maxRetries - 1) {
-        const delay = initialDelay * Math.pow(2, attempt);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+    }
+
+    // If no results and not the last attempt, wait and retry
+    if (attempt < maxRetries - 1) {
+      const delay = initialDelay * Math.pow(2, attempt); // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  
+
   console.warn(`⚠️ Document ${documentId} not found after ${maxRetries} attempts (may still be indexing)`);
   return [];
 }
@@ -835,6 +797,15 @@ export async function similaritySearch(query, env, topK = TOP_K, sessionId) {
   }
 }
 
+// Works out the image type from its first bytes so the data URL is labelled correctly
+function detectImageMimeType(bytes) {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif';
+  if (bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
+  if (bytes[0] === 0x42 && bytes[1] === 0x4D) return 'image/bmp';
+  return 'image/jpeg';
+}
+
 // Extracts text/description from images using vision models - I try multiple
 // models because they're not all available on every plan. The base64 conversion
 // was a pain but necessary. Also handles different response formats because
@@ -846,8 +817,13 @@ async function extractTextFromImage(imageData, env) {
     // Convert to base64 for Workers AI (most vision models expect base64)
     let base64Image = '';
     try {
-      // Convert Uint8Array to base64
-      const binaryString = String.fromCharCode.apply(null, uint8Array);
+      // Convert Uint8Array to base64 in chunks - spreading a whole image into
+      // String.fromCharCode overflows the call stack for anything over ~100KB
+      let binaryString = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        binaryString += String.fromCharCode.apply(null, uint8Array.subarray(i, i + chunkSize));
+      }
       base64Image = btoa(binaryString);
     } catch (base64Error) {
       console.warn('Base64 conversion failed, trying alternative method:', base64Error);
@@ -859,12 +835,8 @@ async function extractTextFromImage(imageData, env) {
     // Try multiple vision models in order of preference
     const visionModels = [
       {
-        name: '@cf/llava-hf/llava-1.5-7b',
+        name: '@cf/meta/llama-4-scout-17b-16e-instruct',
         prompt: "Describe this image in detail, including any text visible in the image. Be thorough and descriptive. If there is text in the image, transcribe it exactly."
-      },
-      {
-        name: '@cf/unum/uform-gen2-qwen-500m',
-        prompt: "Describe everything you see in this image, including any text, objects, people, scenes, and details. Transcribe any visible text."
       },
       {
         name: '@cf/meta/llama-3.2-11b-vision-instruct',
@@ -889,8 +861,20 @@ async function extractTextFromImage(imageData, env) {
         let response = null;
         const formatsToTry = [];
         
-        // Format 1: Base64 string
+        // Format 1: Chat messages with a data URL - current vision models (Llama 4)
+        // accept the other formats but silently ignore the image, so try this first
         if (base64Image) {
+          formatsToTry.push({
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: model.prompt },
+                  { type: 'image_url', image_url: { url: `data:${detectImageMimeType(uint8Array)};base64,${base64Image}` } }
+                ]
+              }
+            ]
+          });
           formatsToTry.push({ image: base64Image });
         }
         
@@ -900,20 +884,6 @@ async function extractTextFromImage(imageData, env) {
         // Format 3: Array from Uint8Array
         formatsToTry.push({ image: Array.from(uint8Array) });
         
-        // Format 4: With messages format (some models use this)
-        if (base64Image) {
-          formatsToTry.push({
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: model.prompt },
-                  { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-                ]
-              }
-            ]
-          });
-        }
         
         // Try each format until one works
         for (const format of formatsToTry) {

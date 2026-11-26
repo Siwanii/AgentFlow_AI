@@ -395,7 +395,8 @@ export default {
             for (const query of imageSearchQueries) {
               try {
                 // Use a large topK to get as many image chunks as possible
-                const chunks = await similaritySearch(query, env, 100, sessionId);
+                // (Vectorize caps topK at 50 when returning metadata)
+                const chunks = await similaritySearch(query, env, 50, sessionId);
                 const imageChunks = chunks.filter(c => c.text?.includes('[IMAGE DESCRIPTION]'));
                 allImageChunksFromDB.push(...imageChunks);
               } catch (err) {
@@ -769,7 +770,7 @@ Always cite sources when using web search results.`;
 
 
       // Call Llama 3.3 via Workers AI
-      const response = await env.AI.run('@cf/meta/llama-3.3-70b-instruct', {
+      const response = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
         messages: formattedMessages,
         max_tokens: 500,
         temperature: 0.7,

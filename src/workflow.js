@@ -323,8 +323,8 @@ export class ChatWorkflow {
     const { context, env } = this.state;
     
     // Use Llama 3.3 which has better function calling support
-    const primaryModel = '@cf/meta/llama-3.3-70b-instruct';
-    const fallbackModel = '@cf/meta/llama-3.1-8b-instruct';
+    const primaryModel = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+    const fallbackModel = '@cf/meta/llama-4-scout-17b-16e-instruct';
     
     // Maximum iterations for agent tool use loop (prevents infinite loops)
     const maxIterations = 5;
@@ -369,6 +369,10 @@ export class ChatWorkflow {
         const functionCalls = this.detectAgentFunctionCalls(responseText, rawResponse);
         
         if (functionCalls && functionCalls.length > 0) {
+          // The API needs an id on each tool call so tool results can reference it
+          functionCalls.forEach((call, i) => {
+            call.id = call.id || `call_${iteration}_${i}`;
+          });
           const functionResults = [];
           for (const funcCall of functionCalls) {
             try {
@@ -413,11 +417,19 @@ export class ChatWorkflow {
           currentMessages.push({
             role: 'assistant',
             content: '', // Empty content to avoid verbose explanations
-            tool_calls: functionCalls
+            tool_calls: functionCalls.map(call => ({
+              id: call.id,
+              type: 'function',
+              function: {
+                name: call.name,
+                arguments: JSON.stringify(call.arguments || {})
+              }
+            }))
           });
           
           // Add tool results back to conversation for agent to process
-          for (const funcResult of functionResults) {
+          // functionResults has one entry per call, in the same order
+          for (const [resultIndex, funcResult] of functionResults.entries()) {
             let toolContent = funcResult.result;
             
             // Check if tool failed and add confidence indicator
@@ -460,6 +472,7 @@ export class ChatWorkflow {
             
             currentMessages.push({
               role: 'tool',
+              tool_call_id: functionCalls[resultIndex].id,
               name: funcResult.name,
               content: toolContent
             });
@@ -611,7 +624,7 @@ export class ChatWorkflow {
           
           finalResponse = {
             content: cleanedResponse,
-            model: 'llama-3.3-70b-instruct',
+            model: 'llama-3.3-70b-instruct-fp8-fast',
             timestamp: Date.now(),
             tokens: response?.tokens || 0,
             toolsUsed: toolsUsed,
@@ -670,7 +683,7 @@ export class ChatWorkflow {
             const content = response2.response || response2 || 'I apologize, but I was unable to generate a response.';
             finalResponse = {
               content,
-        model: 'llama-3.1-8b-instruct',
+        model: 'llama-4-scout-17b-16e-instruct',
               timestamp: Date.now(),
               toolsUsed: [],
               functionCallsExecuted: []
@@ -741,6 +754,7 @@ export class ChatWorkflow {
     // Method 1: Check for structured tool_calls in response (native function calling)
     if (rawResponse.tool_calls && Array.isArray(rawResponse.tool_calls)) {
       return rawResponse.tool_calls.map(call => ({
+        id: call.id,
         name: call.function?.name || call.name,
         arguments: typeof call.function?.arguments === 'string' 
           ? JSON.parse(call.function.arguments) 
