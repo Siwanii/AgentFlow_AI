@@ -449,7 +449,7 @@ export async function createEmbeddings(chunks, env) {
 // Stores everything in Vectorize - the chunks, embeddings, and metadata
 // I include timestamps so we can prioritize recent documents. Also had to
 // validate everything because Vectorize is picky about data types
-export async function storeInVectorize(chunks, embeddings, documentId, env) {
+export async function storeInVectorize(chunks, embeddings, documentId, sessionId, env) {
   // Check for Vectorize binding (try different possible names)
   const vectorize = env.VECTORIZE || env.vectorize || env.Vectorize;
   if (!vectorize) {
@@ -506,6 +506,7 @@ export async function storeInVectorize(chunks, embeddings, documentId, env) {
       values: validValues,
       metadata: {
         documentId: String(documentId),
+        sessionId: String(sessionId), // scopes retrieval to the uploader's session
         chunkIndex: Number(index),
         text: cleanText,
         timestamp: Date.now() // Add timestamp for sorting by recency
@@ -558,10 +559,15 @@ export async function storeInVectorize(chunks, embeddings, documentId, env) {
 // Queries Vectorize by document ID - I added this because of a race condition
 // where images would be uploaded but not indexed yet. This bypasses similarity
 // search and just grabs chunks by ID, with retries because indexing takes time
-export async function queryByDocumentId(documentId, env, maxRetries = 5, initialDelay = 2000) {
+export async function queryByDocumentId(documentId, env, maxRetries = 5, initialDelay = 2000, sessionId) {
   const vectorize = env.VECTORIZE || env.vectorize || env.Vectorize;
   if (!vectorize) {
     console.warn('Vectorize not available, cannot query by document ID');
+    return [];
+  }
+
+  // No session means no way to know whose documents these are - return nothing
+  if (!sessionId) {
     return [];
   }
 
@@ -599,7 +605,10 @@ export async function queryByDocumentId(documentId, env, maxRetries = 5, initial
       }
       
       // Query with a large topK to get many results, then filter by documentId
-      const results = await vectorize.query(queryVector, { topK: 200 }); // Increased to 200
+      const results = await vectorize.query(queryVector, {
+        topK: 200,
+        filter: { sessionId: String(sessionId) } // only this session's documents
+      });
       
       // Filter results to only include chunks from the specified documentId
       const documentChunks = (results.matches || []).filter(match => {
@@ -649,11 +658,16 @@ export async function queryByDocumentId(documentId, env, maxRetries = 5, initial
 // Does the actual similarity search - converts the query to an embedding,
 // searches Vectorize, and filters out junk. I filter pretty aggressively
 // because PDF metadata was showing up in results and that was annoying
-export async function similaritySearch(query, env, topK = TOP_K) {
+export async function similaritySearch(query, env, topK = TOP_K, sessionId) {
   // Check for Vectorize binding (try different possible names)
   const vectorize = env.VECTORIZE || env.vectorize || env.Vectorize;
   if (!vectorize) {
     console.warn('Vectorize not available, skipping RAG');
+    return [];
+  }
+
+  // No session means no way to know whose documents these are - return nothing
+  if (!sessionId) {
     return [];
   }
   
@@ -706,7 +720,8 @@ export async function similaritySearch(query, env, topK = TOP_K) {
     // Perform similarity search
     const results = await vectorize.query(queryVector, {
       topK: topK,
-      returnMetadata: true
+      returnMetadata: true,
+      filter: { sessionId: String(sessionId) } // only this session's documents
     });
     
     // Format results - handle different response formats
@@ -1032,8 +1047,12 @@ async function extractTextFromImage(imageData, env) {
 // Main function that processes any document type - handles the whole pipeline:
 // extract text, chunk it, create embeddings, store in Vectorize. This is what
 // gets called when someone uploads a file or pastes a URL
-export async function processDocument(source, type, fileData, env) {
+export async function processDocument(source, type, fileData, env, sessionId) {
   try {
+    if (!sessionId) {
+      throw new Error('sessionId is required to store a document');
+    }
+
     let text = '';
     
     // Extract text based on type
@@ -1112,7 +1131,7 @@ export async function processDocument(source, type, fileData, env) {
     
     // Store in Vectorize
     console.log(`💾 Storing ${chunks.length} chunks in Vectorize...`);
-    await storeInVectorize(chunks, embeddings, documentId, env);
+    await storeInVectorize(chunks, embeddings, documentId, sessionId, env);
     
     return {
       documentId,

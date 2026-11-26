@@ -466,7 +466,8 @@
     </div>
 
     <script>
-        let sessionId = 'demo-session-' + Date.now();
+        // Random so other users can't guess it and read this session's documents
+        let sessionId = 'session-' + crypto.randomUUID();
         let isLoading = false;
         let attachedFiles = [];
         let attachedUrl = null;
@@ -645,6 +646,7 @@
             if (attachedFiles.length > 0 || attachedUrl) {
                 try {
                     const formData = new FormData();
+                    formData.append('sessionId', sessionId);
                     
                     if (attachedUrl) {
                         formData.append('url', attachedUrl);

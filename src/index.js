@@ -168,8 +168,9 @@ export default {
           ))
       );
         
-        // Only search for documents if it's a document-related request (not a greeting)
-        if (isDocumentRequest) {
+        // Only search for documents if it's a document-related request (not a greeting).
+        // Without a sessionId we can't tell whose documents to search, so skip RAG
+        if (isDocumentRequest && sessionId) {
           // For document requests, use a broad search to get all relevant content
           // Try multiple search strategies to get comprehensive context
           let allChunks = [];
@@ -208,7 +209,7 @@ export default {
             ];
             
             for (const query of genericQueries) {
-              const chunks = await similaritySearch(query, env, 25);
+              const chunks = await similaritySearch(query, env, 25, sessionId);
               if (chunks && chunks.length > 0) {
                 allChunks.push(...chunks);
               }
@@ -222,20 +223,20 @@ export default {
               .trim();
             
             if (contentTerms.length > 3) {
-              const specificChunks = await similaritySearch(contentTerms, env, 15);
+              const specificChunks = await similaritySearch(contentTerms, env, 15, sessionId);
               if (specificChunks && specificChunks.length > 0) {
                 allChunks.push(...specificChunks);
               }
             }
           } else {
             // For other document questions, use the user's message as query
-            const messageChunks = await similaritySearch(message, env, 20);
+            const messageChunks = await similaritySearch(message, env, 20, sessionId);
             if (messageChunks && messageChunks.length > 0) {
               allChunks.push(...messageChunks);
             }
             
             // Also try generic search as fallback
-            const genericChunks = await similaritySearch('document content information', env, 15);
+            const genericChunks = await similaritySearch('document content information', env, 15, sessionId);
             if (genericChunks && genericChunks.length > 0) {
               allChunks.push(...genericChunks);
             }
@@ -394,7 +395,7 @@ export default {
             for (const query of imageSearchQueries) {
               try {
                 // Use a large topK to get as many image chunks as possible
-                const chunks = await similaritySearch(query, env, 100);
+                const chunks = await similaritySearch(query, env, 100, sessionId);
                 const imageChunks = chunks.filter(c => c.text?.includes('[IMAGE DESCRIPTION]'));
                 allImageChunksFromDB.push(...imageChunks);
               } catch (err) {
@@ -485,7 +486,7 @@ export default {
               const documentIdToQuery = lastImageDocumentId || mostRecentImageDocId;
               
               if (documentIdToQuery) {
-              const documentChunks = await queryByDocumentId(documentIdToQuery, env, 3, 500);
+              const documentChunks = await queryByDocumentId(documentIdToQuery, env, 3, 500, sessionId);
               if (documentChunks.length > 0) {
                 finalChunks = documentChunks;
               } else {
@@ -511,7 +512,7 @@ export default {
                   // Try document ID pattern: image-{timestamp}-*
                   // We'll query with a generic search and filter by timestamp in metadata
                   try {
-                    const testChunks = await similaritySearch('[IMAGE DESCRIPTION]', env, 50);
+                    const testChunks = await similaritySearch('[IMAGE DESCRIPTION]', env, 50, sessionId);
                     const recentImageChunks = testChunks.filter(c => {
                       const chunkTimestamp = c.metadata?.timestamp || extractTimestampFromDocId(c.metadata?.documentId || '');
                       // Check if timestamp is within 2 minutes
@@ -541,7 +542,7 @@ export default {
                       }
                       
                       if (bestDocId) {
-                        const documentChunks = await queryByDocumentId(bestDocId, env, 2, 1000);
+                        const documentChunks = await queryByDocumentId(bestDocId, env, 2, 1000, sessionId);
                         if (documentChunks.length > 0) {
                           finalChunks = documentChunks;
                           foundRecentDoc = true;
@@ -824,6 +825,17 @@ Always cite sources when using web search results.`;
       const formData = await request.formData();
       const url = formData.get('url');
       const file = formData.get('file');
+      const sessionId = formData.get('sessionId');
+
+      // Documents are stored per session so users can't retrieve each other's uploads
+      if (!sessionId) {
+        return new Response(JSON.stringify({ 
+          error: 'sessionId is required' 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
 
       if (!url && !file) {
         return new Response(JSON.stringify({ 
@@ -837,7 +849,7 @@ Always cite sources when using web search results.`;
       let result;
       if (url) {
         // Process URL
-        result = await processDocument(url, 'url', null, env);
+        result = await processDocument(url, 'url', null, env, sessionId);
       } else if (file) {
         // Process file
         
@@ -916,7 +928,7 @@ Always cite sources when using web search results.`;
               });
             }
             
-            result = await processDocument(text, 'text', null, env);
+            result = await processDocument(text, 'text', null, env, sessionId);
           } catch (textError) {
             console.error('Error processing text file:', textError);
             throw new Error(`Failed to process text file: ${textError.message}`);
@@ -924,7 +936,7 @@ Always cite sources when using web search results.`;
         } else if (isImage) {
           // For image files, use image processing
           try {
-            result = await processDocument(fileName, 'image', arrayBuffer, env);
+            result = await processDocument(fileName, 'image', arrayBuffer, env, sessionId);
           } catch (imageError) {
             console.error('❌ Image processing error:', imageError);
             const errorMsg = imageError.message || 'Unknown error';
@@ -938,7 +950,7 @@ Always cite sources when using web search results.`;
           }
         } else {
           // For PDF files, use PDF extraction
-          result = await processDocument(file.name, 'pdf', arrayBuffer, env);
+          result = await processDocument(file.name, 'pdf', arrayBuffer, env, sessionId);
         }
       }
 
