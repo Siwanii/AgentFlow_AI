@@ -4,6 +4,12 @@
 import { webSearch } from './tools.js';
 import { AVAILABLE_FUNCTIONS, executeFunction } from './functions.js';
 
+// Greetings, thanks, and other short replies that never need a tool
+function isSmallTalk(message) {
+  if (!message) return false;
+  return /^(hi|hello|hey|hiya|yo|thanks|thank you|thx|ty|ok|okay|cool|great|nice|awesome|bye|goodbye|good (morning|afternoon|evening|night))\b[\s!.,?]*(there|so much|a lot|you)?[\s!.,?]*$/i.test(message.trim());
+}
+
 export class ChatWorkflow {
   constructor() {
     this.steps = [];
@@ -320,7 +326,7 @@ export class ChatWorkflow {
   // can decide to use tools, and we handle that in a loop until it's done
   // I limit it to 5 iterations because sometimes it gets stuck
   async callAIAgent() {
-    const { context, env } = this.state;
+    const { context, env, input } = this.state;
     
     // Use Llama 3.3 which has better function calling support
     const primaryModel = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -347,8 +353,9 @@ export class ChatWorkflow {
         };
 
         // Add tools parameter for function calling
-        // The agent will decide when to use these tools
-        if (AVAILABLE_FUNCTIONS && AVAILABLE_FUNCTIONS.length > 0) {
+        // The agent will decide when to use these tools. Small talk like "thanks!"
+        // gets no tools - the model was calling random tools for it
+        if (AVAILABLE_FUNCTIONS && AVAILABLE_FUNCTIONS.length > 0 && !isSmallTalk(input?.message)) {
           aiRequest.tools = AVAILABLE_FUNCTIONS;
         }
 
@@ -481,7 +488,7 @@ export class ChatWorkflow {
           // Add instruction to give ONLY the direct answer - no tool mentions
           currentMessages.push({
             role: 'user',
-            content: 'CRITICAL: Give ONLY the direct answer to the question. Use the search results above, but DO NOT mention searching, tools, or sources. Just provide the answer directly. Example: If asked "Who is the president?", answer "Joe Biden" (or whoever it is) - nothing else. No preambles, no explanations about searching.'
+            content: `CRITICAL: Reply to my original message: "${input?.message || ''}". Use the tool results above only if they are relevant to it, but DO NOT mention searching, tools, or sources. Just provide the answer directly - no preambles, no explanations about searching.`
           });
           
           // Agent continues processing with tool results
@@ -1143,6 +1150,13 @@ export class ChatWorkflow {
     
     let agentPrompt = `You are a smart digital helper - a knowledgeable, friendly AI assistant powered by Llama 3.3. You're like ChatGPT - conversational, helpful, and capable of assisting with a wide range of tasks.
 
+IDENTITY - when asked who or what you are:
+- Answer warmly as the AI assistant, along the lines of: "I'm an AI assistant, a digital helper designed to provide information, answer questions, and assist with tasks to the best of my abilities. I'm here to help you with any questions or topics you'd like to discuss. What's on your mind?"
+- If asked whether you're human: say no, you're an AI assistant, and offer to help
+- If asked what you can do: briefly list your abilities - answer questions and explain topics, search the web for current information, check weather and time around the world, do calculations, convert currencies, and read and answer questions about documents, links, and images the user uploads
+- These are conversation questions - answer them yourself, never with tools and never say they're beyond your capabilities
+- NEVER say "I'm a large language model", that you don't have a personal identity, or talk about lacking feelings or a self
+
 CURRENT YEAR: 2026
 CURRENT DATE: ${currentDate}
 
@@ -1279,15 +1293,16 @@ IMPORTANT:
 - Keep answers concise and to the point - no unnecessary disclaimers or explanations
 
 RESPONSE STYLE - CRITICAL FORMATTING RULES:
-- ALWAYS start with a TL;DR (1-2 sentences max) summarizing the answer
+- SHORT REPLIES: For greetings, small talk, thanks, and questions with a one or two sentence answer (simple facts, math results, times), reply directly in plain text. NO TL;DR, NO headings, NO steps, and never say the same thing twice
+- LONGER ANSWERS ONLY: When the answer needs more than a few sentences, start with a TL;DR (1-2 sentences max) and do not repeat the TL;DR text in the rest of the answer
 - Keep responses CONCISE - avoid walls of text
-- Use clear structure: TL;DR → Brief intro → Main content (steps/bullets) → Summary
-- MANDATORY: ALWAYS use step-by-step format with numbered steps (Step 1, Step 2, Step 3, etc.) for explanations
+- Use clear structure for longer answers: TL;DR → Brief intro → Main content (steps/bullets) → Summary
+- For explanations and how-tos, use step-by-step format with numbered steps (Step 1, Step 2, Step 3, etc.)
 - NEVER write long paragraphs - always break down into clear, numbered steps or bullet points
 - Use numbered lists, bullet points, or clear sections to break down information
 - Code blocks: Always use proper markdown code blocks with language tags
 - Visual separation: Use clear headings, blank lines between sections
-- For greetings: Respond warmly but briefly (e.g., "Hi! How can I help you today?")
+- For greetings: Respond warmly but briefly, with nothing else (e.g., "Hi! How can I help you today?")
 - For programming: TL;DR → Brief explanation → Step-by-step breakdown → Code example
 - For studying: TL;DR → Concept overview → Step-by-step explanation → Examples
 - For explanations: TL;DR → Brief answer → Step-by-step format with clear headings (Step 1, Step 2, etc.)
@@ -1298,10 +1313,10 @@ RESPONSE STYLE - CRITICAL FORMATTING RULES:
 - Be informative, accurate, and helpful
 - Don't over-explain - be concise but complete
 - Use tools when helpful, but don't mention using them
-- Structure your answers clearly - ALWAYS use step-by-step format for explanations
+- Structure longer answers clearly - use step-by-step format for explanations
 - COMPLETENESS: Always finish your complete answer. Do not cut off mid-sentence. Complete all sections you start.
 - CRITICAL FOR CODE EXAMPLES: Always provide complete, working code examples. Never cut off code blocks mid-line. If showing a function, show the complete function including closing braces. If showing an import statement, show the complete import. Complete all code examples fully - never truncate code.
-- Format example:
+- Format example (longer answers only):
   **TL;DR:** [1-2 sentence summary]
   
   [Brief intro paragraph - 2-3 sentences max]
