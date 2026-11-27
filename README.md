@@ -45,18 +45,17 @@ The frontend is a simple HTML page that talks to a Cloudflare Worker. The Worker
 The AI agent autonomously decides which tools to use based on your query:
 
 ```javascript
-User: "What's the weather in Paris?"
+User: "What's the latest news about Cloudflare?"
   ↓
-Agent: Detects need for weather data
+Agent: Detects need for current information
   ↓
-Agent: Calls get_weather("Paris")
+Agent: Calls search_web("latest news about Cloudflare")
   ↓
-Agent: "It's currently 18°C and sunny in Paris!"
+Agent: Answers using the search results
 ```
 
 **Available Tools:**
 - `search_web` - Search the web for current information
-- `get_weather` - Get real-time weather data
 - `calculate` - Perform mathematical calculations
 - `get_current_time` - Get current time in any timezone
 - `convert_currency` - Convert between currencies
@@ -85,7 +84,7 @@ Ask questions → AI references the description → Accurate answers
 ## Setup & Installation
 
 ### Prerequisites
-- Node.js 18+ installed
+- Node.js 22.12+ installed (required by Wrangler 4)
 - Python 3 (serves the chat page locally)
 - Cloudflare account (free tier works!)
 
@@ -122,12 +121,7 @@ npm run dev
 
 The Worker runs on your machine, but Workers AI and Vectorize connect to your Cloudflare account (there's no local version of either - see `remote = true` in `wrangler.toml`).
 
-### 6. Deploy
-```bash
-npm run deploy
-```
-
-Then open your browser to:
+`npm run dev` starts the API and the chat page and opens your browser. If it doesn't open, go to:
 - **Chat Interface**: http://localhost:3000/cf_ai_chat-assistant/
 - **Health Check**: http://localhost:8787/api/health
 
@@ -138,13 +132,20 @@ The chat interface is pretty intuitive - just type your question and hit enter. 
 - Click the 🎤 icon for voice input
 - Paste URLs directly in the chat
 
+### 6. Deploy
+```bash
+npm run deploy
+```
+
+This publishes the Worker to your Cloudflare account.
+
 ## Architecture Details
 
 ### Core Components
 
 **Frontend (`cf_ai_chat-assistant/index.html`)**
 - Simple HTML/CSS/JavaScript chat interface
-- Handles streaming responses, file uploads, voice input
+- Handles file uploads and voice input
 - Dark mode support with localStorage persistence
 
 **Main Worker (`src/index.js`)**
@@ -159,7 +160,7 @@ The chat interface is pretty intuitive - just type your question and hit enter. 
 - Handles function calling and tool execution
 
 **Function Registry (`src/functions.js`)**
-- Defines available tools (search_web, get_weather, etc.)
+- Defines available tools (search_web, calculate, etc.)
 - Implements each tool's logic
 - Returns structured results for the AI
 
@@ -170,8 +171,8 @@ The chat interface is pretty intuitive - just type your question and hit enter. 
 - Handles race conditions for image indexing
 
 **Session Management (`src/chat-session.js`)**
-- Durable Object for persistent chat sessions
-- Stores conversation history
+- Durable Object that manages chat session state
+- Keeps conversation history in memory while the session is active (it isn't saved, so it resets when the session restarts)
 - Maintains context across messages
 
 ### Technical Stack
@@ -185,7 +186,7 @@ The chat interface is pretty intuitive - just type your question and hit enter. 
 ### How Tools Are Triggered
 
 The system uses a combination of:
-1. **Keyword detection** - Looks for words like "weather", "2025", "calculate"
+1. **Keyword detection** - Looks for words like "latest", "today", "2025", "calculate"
 2. **Auto-trigger logic** - Automatically calls tools when needed (no need for the AI to explicitly request)
 3. **Context awareness** - Understands when current information is needed vs. general knowledge
 
@@ -231,7 +232,6 @@ Contributions are welcome! Here's how:
 - Documents stored securely in Vectorize (Cloudflare's managed service)
 - Uploads are tied to your chat session - other users can't search or read them
 - Session data isolated via Durable Objects
-- No data shared with third parties
 - Self-host for complete control
 
 
